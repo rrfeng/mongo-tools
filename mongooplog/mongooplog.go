@@ -100,6 +100,12 @@ func (mo *MongoOplog) Run() error {
 
 			oplogChan <- *oplogEntry
 			opCount++
+
+			// print the first oplog to confirm with the target's latest oplog.
+			if opCount == 1 {
+				log.Logvf(log.Always, "Got first oplog with Timestamp: %v", oplogEntry.Timestamp>>32)
+				log.Logvf(log.Always, "If this newer than target's last oplog, stop this.")
+			}
 		}
 
 		// make sure there was no tailing error
