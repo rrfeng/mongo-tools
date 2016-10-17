@@ -133,7 +133,7 @@ func (mo *MongoOplog) Run() error {
 				return fmt.Errorf("server gave error applying ops: %v", res.ErrMsg)
 			}
 
-			log.Logvf(log.Always, "%v oplogs have been applied, total: %v. Last: %v", len(opsToApply), opCount, opsToApply[len(opsToApply)-1].Timestamp)
+			log.Logvf(log.Always, "%v oplogs have been applied, total: %v. Last: %v", len(opsToApply), opCount, opsToApply[len(opsToApply)-1].Timestamp>>32)
 
 			// reset the opsToApply silce
 			opsToApply = opsToApply[:0]
@@ -156,7 +156,7 @@ func (mo *MongoOplog) Run() error {
 					return fmt.Errorf("server gave error applying ops: %v", res.ErrMsg)
 				}
 
-				log.Logvf(log.Always, "%v oplogs have been applied, total: %v. Last: %v", len(opsToApply), opCount, opsToApply[len(opsToApply)-1].Timestamp)
+				log.Logvf(log.Always, "%v oplogs have been applied, total: %v. Last: %v", len(opsToApply), opCount, opEntry.Timestamp>>32)
 
 				// reset the opsToApply silce
 				opsToApply = opsToApply[:0]
