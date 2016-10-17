@@ -88,6 +88,7 @@ func (mo *MongoOplog) Run() error {
 	oplogChan := make(chan db.Oplog)
 	timer := time.NewTicker(5 * time.Second)
 
+	opCount := 0
 	go func() {
 		for tail.Next(oplogEntry) {
 
@@ -103,16 +104,14 @@ func (mo *MongoOplog) Run() error {
 
 		// make sure there was no tailing error
 		if err := tail.Err(); err != nil {
-			return fmt.Errorf("error querying oplog: %v", err)
+			log.Logvf(log.Always, "error querying oplog: %v", err)
+			return
 		}
 
 		log.Logvf(log.DebugLow, "done applying %v oplog entries", opCount)
-
-		return nil
+		return
 	}()
 
-	opCount := 0
-	opEntry := db.Oplog{}
 	opsToApply := []db.Oplog{}
 	maxSize := 10000
 	for {
@@ -188,6 +187,5 @@ func buildTailingCursor(oplog *mgo.Collection,
 	}
 
 	// wait up to 10min for an new oplog
-	return oplog.Find(oplogQuery).LogReplay().Tail(600 * time.Second).Iter()
-
+	return oplog.Find(oplogQuery).LogReplay().Tail(600 * time.Second)
 }
