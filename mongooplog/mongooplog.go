@@ -85,41 +85,83 @@ func (mo *MongoOplog) Run() error {
 
 	log.Logv(log.DebugLow, "applying oplog entries...")
 
+	oplogChan := make(chan db.Oplog)
+	timer := time.NewTicker(5 * time.Second)
+
+	go func() {
+		for tail.Next(oplogEntry) {
+
+			// skip noops
+			if oplogEntry.Operation == "n" {
+				log.Logvf(log.DebugHigh, "skipping no-op for namespace `%v`", oplogEntry.Namespace)
+				continue
+			}
+
+			oplogChan <- *oplogEntry
+			opCount++
+		}
+
+		// make sure there was no tailing error
+		if err := tail.Err(); err != nil {
+			return fmt.Errorf("error querying oplog: %v", err)
+		}
+
+		log.Logvf(log.DebugLow, "done applying %v oplog entries", opCount)
+
+		return nil
+	}()
+
 	opCount := 0
+	opEntry := db.Oplog{}
+	opsToApply := []db.Oplog{}
+	maxSize := 10000
+	for {
+		select {
+		case <-timer.C:
+			if len(opsToApply) == 0 {
+				continue
+			}
 
-	for tail.Next(oplogEntry) {
+			// apply the operation
+			err := toSession.Run(bson.M{"applyOps": opsToApply}, res)
 
-		// skip noops
-		if oplogEntry.Operation == "n" {
-			log.Logvf(log.DebugHigh, "skipping no-op for namespace `%v`", oplogEntry.Namespace)
-			continue
-		}
-		opCount++
+			if err != nil {
+				return fmt.Errorf("error applying ops: %v", err)
+			}
 
-		// prepare the op to be applied
-		opsToApply := []db.Oplog{*oplogEntry}
+			// check the server's response for an issue
+			if !res.Ok {
+				return fmt.Errorf("server gave error applying ops: %v", res.ErrMsg)
+			}
 
-		// apply the operation
-		err := toSession.Run(bson.M{"applyOps": opsToApply}, res)
+			// reset the opsToApply silce
+			opsToApply = opsToApply[:0]
+			log.Logvf(log.Always, "%v oplogs have been applied. total: %v.", len(opsToApply), opCount)
 
-		if err != nil {
-			return fmt.Errorf("error applying ops: %v", err)
-		}
+		case opEntry := <-oplogChan:
+			// prepare the op to be applied
+			opsToApply = append(opsToApply, opEntry)
 
-		// check the server's response for an issue
-		if !res.Ok {
-			return fmt.Errorf("server gave error applying ops: %v", res.ErrMsg)
+			// if there are too many oplogs, send.
+			if len(opsToApply) >= maxSize {
+				// apply the operation
+				err := toSession.Run(bson.M{"applyOps": opsToApply}, res)
+
+				if err != nil {
+					return fmt.Errorf("error applying ops: %v", err)
+				}
+
+				// check the server's response for an issue
+				if !res.Ok {
+					return fmt.Errorf("server gave error applying ops: %v", res.ErrMsg)
+				}
+
+				// reset the opsToApply silce
+				opsToApply = opsToApply[:0]
+				log.Logvf(log.Always, "%v oplogs have been applied. total: %v.", len(opsToApply), opCount)
+			}
 		}
 	}
-
-	// make sure there was no tailing error
-	if err := tail.Err(); err != nil {
-		return fmt.Errorf("error querying oplog: %v", err)
-	}
-
-	log.Logvf(log.DebugLow, "done applying %v oplog entries", opCount)
-
-	return nil
 }
 
 // get the cursor for the oplog collection, based on the options
@@ -145,7 +187,7 @@ func buildTailingCursor(oplog *mgo.Collection,
 		},
 	}
 
-	// TODO: wait time
-	return oplog.Find(oplogQuery).Iter()
+	// wait up to 10min for an new oplog
+	return oplog.Find(oplogQuery).LogReplay().Tail(600 * time.Second).Iter()
 
 }
