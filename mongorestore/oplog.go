@@ -71,6 +71,11 @@ func (restore *MongoRestore) RestoreOplog() error {
 			//skip no-ops
 			continue
 		}
+
+		if !restore.TimestampAfterLimit(entryAsOplog.Timestamp) {
+			continue
+		}
+
 		if !restore.TimestampBeforeLimit(entryAsOplog.Timestamp) {
 			log.Logvf(
 				log.DebugLow,
@@ -120,6 +125,13 @@ func (restore *MongoRestore) TimestampBeforeLimit(ts bson.MongoTimestamp) bool {
 		return true
 	}
 	return ts < restore.oplogLimit
+}
+
+func (restore *MongoRestore) TimestampAfterStart(ts bson.MongoTimestamp) bool {
+	if restore.oplogStart == 0 {
+		return true
+	}
+	return ts > restore.oplogStart
 }
 
 // ParseTimestampFlag takes in a string the form of <time_t>:<ordinal>,

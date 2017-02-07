@@ -41,6 +41,7 @@ type MongoRestore struct {
 	safety  *mgo.Safe
 
 	objCheck         bool
+	oplogStart       bson.MongoTimestamp
 	oplogLimit       bson.MongoTimestamp
 	isMongos         bool
 	useWriteCommands bool
@@ -120,6 +121,17 @@ func (restore *MongoRestore) ParseAndValidateOptions() error {
 			return fmt.Errorf("error parsing timestamp argument to --oplogLimit: %v", err)
 		}
 	}
+
+	if restore.InputOptions.OplogStart != "" {
+		if !restore.InputOptions.OplogReplay {
+			return fmt.Errorf("cannot use --oplogStart without --oplogReplay enabled")
+		}
+		restore.oplogStart, err = ParseTimestampFlag(restore.InputOptions.OplogStart)
+		if err != nil {
+			return fmt.Errorf("error parsing timestamp argument to --oplogStart: %v", err)
+		}
+	}
+
 	if restore.InputOptions.OplogFile != "" {
 		if !restore.InputOptions.OplogReplay {
 			return fmt.Errorf("cannot use --oplogFile without --oplogReplay enabled")
